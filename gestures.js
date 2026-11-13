@@ -47,6 +47,12 @@ export const DEFAULTS = {
   holdOpen: 700,
   holdOk: 400,
   holdVolume: 450,
+  holdSign: 500,         // a mapped finger-count sign (one/two fingers) must be held this long.
+                         // Above flickRestMs, so a flick never also fires the sign it starts from.
+  signDrift: 0.06,       // ...and STILL: averaged fingertip drift over the hold, in palm lengths.
+                         // Averaging cancels tracking jitter but not a real (even slow) move.
+  mapping: null,         // pose -> action-name overrides, merged over ACTIONS; a null entry
+                         // disables that sign (e.g. { point: null } while a UI uses the pointer).
   thumbClear: 0.25,      // a thumbs-up/down tip must clear the folded fingers by this much
   volumeRepeatMs: 300,
   showAfter: 100,        // ms before the hold ring appears (avoids flicker)
@@ -60,10 +66,13 @@ export const ACTIONS = {
   ok: 'legend',
   'thumbs-up': 'volumeUp',
   'thumbs-down': 'volumeDown',
+  point: 'previous',     // one finger held: back
+  two: 'next',           // two fingers held: forward
 };
 const HOLD = {
   open: 'holdOpen', ok: 'holdOk',
   'thumbs-up': 'holdVolume', 'thumbs-down': 'holdVolume',
+  point: 'holdSign', two: 'holdSign',
 };
 const REPEATS = new Set(['thumbs-up', 'thumbs-down']);
 
@@ -108,6 +117,9 @@ export function readHand(landmarks, cfg) {
     const clear = dir < 0 ? Math.min(...fingerYs) - thumbTip.y : thumbTip.y - Math.max(...fingerYs);
     if (tipsIn && thumbStraight && vertical && clear > cfg.thumbClear * palm) pose = dir < 0 ? 'thumbs-up' : 'thumbs-down';
     else if (tipsIn) pose = 'fist';
+  } else if (idx && others === 1) {
+    // exactly one other finger out: a two-finger sign only when it is the middle finger
+    pose = extended(MIDDLE) ? 'two' : 'other';
   } else if (idx && others === 3) {
     // a full open hand: all four fingers and the thumb out
     const thumbLen = d(P(1), P(2)) + d(P(2), P(3)) + d(P(3), thumbTip);
@@ -237,6 +249,7 @@ export function createGestureEngine(options = {}) {
       }
       if (!reason) {
         lastFlick = { t, dir };
+        latched = 'point'; // the pointing hand this flick started from must not also fire its sign
         showHold(0);
         events.push({ type: 'command', name: dir === cfg.flickNext ? 'next' : 'previous', pose: 'flick', dir });
       } else {
@@ -248,7 +261,7 @@ export function createGestureEngine(options = {}) {
     // a fired sign stays locked until the hand has shown something else for a moment
     if (latched && pose !== latched && t - poseSince >= cfg.releaseMs) latched = null;
 
-    const action = ACTIONS[pose];
+    const action = { ...ACTIONS, ...(cfg.mapping || {}) }[pose];
     if (action && latched === pose && REPEATS.has(pose)) {
       // volume: keep stepping while the thumb stays up/down
       if (t - lastFire >= cfg.volumeRepeatMs) {
@@ -260,7 +273,18 @@ export function createGestureEngine(options = {}) {
     if (!action || latched === pose) { showHold(0); return events; }
 
     const held = t - poseSince;
-    const need = cfg[HOLD[pose]];
+    const need = cfg[HOLD[pose]] ?? cfg.holdSign;
+    if (HOLD[pose] === 'holdSign') {
+      // a finger-count sign fires only when held STILL: averaged drift over the hold window.
+      // A wandering or timeline-scrubbing finger never fires; it can fire once the finger rests.
+      const span = hist.filter((h) => t - h.t <= need);
+      if (span.length >= 6) {
+        const n = Math.max(1, Math.floor(span.length / 3));
+        const avg = (a) => ({ x: a.reduce((m, h) => m + h.x, 0) / a.length, y: a.reduce((m, h) => m + h.y, 0) / a.length });
+        const a0 = avg(span.slice(0, n)), a1 = avg(span.slice(-n));
+        if (Math.hypot(a1.x - a0.x, a1.y - a0.y) / r.palm > cfg.signDrift) { showHold(0); return events; }
+      }
+    }
     if (held < cfg.showAfter) { showHold(0); return events; }
     const progress = Math.min(1, held / need);
     if (progress < 1) { showHold(progress, action); return events; }

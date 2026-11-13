@@ -23,6 +23,7 @@ const POSES = {
   // thumbs-down: the thumbs-up hand turned upside down around the palm
   thumbsDown: () => POSES.thumbsUp().map((f) => f.map(([x, y]) => [-x, 2 * -0.1 - y])),
   right: () => [THUMB_TUCKED, ext(MCP.index, [1, 0]), curl(MCP.middle), curl(MCP.ring), curl(MCP.pinky)],
+  two: () => [THUMB_TUCKED, ext(MCP.index), ext(MCP.middle), curl(MCP.ring), curl(MCP.pinky)],
   left: () => [THUMB_TUCKED, ext(MCP.index, [-1, 0]), curl(MCP.middle), curl(MCP.ring), curl(MCP.pinky)],
   up: () => [THUMB_TUCKED, ext(MCP.index), curl(MCP.middle), curl(MCP.ring), curl(MCP.pinky)],
   ok: () => [
@@ -133,8 +134,8 @@ const tests = {
     const r = run([['up', 300], ['up', 150, (u) => ({ cx: 0.9 + 0.2 * u })]], { flicks: false });
     assert.deepEqual(r.commands, []);
   },
-  'pointing finger held still does nothing': () => {
-    assert.deepEqual(run([['up', 2000], ['right', 2000]]).commands, []);
+  'pointing finger held still goes back once (1 = back, held 4s)': () => {
+    assert.deepEqual(run([['up', 2000], ['right', 2000]]).commands, ['previous']);
   },
   'slow drag of the finger does nothing': () => {
     assert.deepEqual(run([['up', 300], ['up', 1200, (u) => ({ cx: 0.9 + 0.3 * u })]]).commands, []);
@@ -193,6 +194,22 @@ const tests = {
   },
   'hand lost mid-hold does nothing': () => {
     assert.deepEqual(run([['open', 400], [null, 600]]).commands, []);
+  },
+  'one finger held still -> previous': () => {
+    assert.deepEqual(run([['up', 900]]).commands, ['previous']);
+  },
+  'two fingers held -> next': () => {
+    assert.deepEqual(run([['two', 900]]).commands, ['next']);
+  },
+  'a flick does not also fire the pointing sign it started from': () => {
+    const r = run([['up', 300], ['up', 150, (u) => ({ cx: 0.9 + 0.2 * u })], ['up', 800, { cx: 1.1 }]]);
+    assert.deepEqual(r.commands, ['next']);
+  },
+  'mapping override renames an action': () => {
+    assert.deepEqual(run([['two', 900]], { mapping: { two: 'pause' } }).commands, ['pause']);
+  },
+  'mapping null disables a sign': () => {
+    assert.deepEqual(run([['open', 1500]], { mapping: { open: null } }).commands, []);
   },
   'far-away hand does nothing and reports far': () => {
     const r = run([['up', 300, { palm: 0.05 }], ['up', 150, (u) => ({ palm: 0.05, cx: 0.9 + 0.2 * u })], ['open', 1500, { palm: 0.05 }]]);
