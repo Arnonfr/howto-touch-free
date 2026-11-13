@@ -1,0 +1,16 @@
+{
+  "name": "howto-touch-free",
+  "version": "0.1.0",
+  "description": "Touch-free hand-gesture recognition for HowTo - shared by the website, app and Chrome extension",
+  "type": "module",
+  "main": "gestures.js",
+  "exports": {
+    ".": "./gestures.js",
+    "./gestures.js": "./gestures.js"
+  },
+  "scripts": {
+    "test": "node tests/gestures.test.mjs"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
